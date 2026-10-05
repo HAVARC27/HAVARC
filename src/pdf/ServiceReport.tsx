@@ -1,5 +1,4 @@
 import { Check } from "lucide-react";
-import type { ReactNode } from "react";
 import type { StatusColor } from "../components/StatusBanner";
 import {
   CONDITION_ITEMS,
@@ -9,12 +8,10 @@ import {
   REPAIRS_ITEMS,
   SERVICE_TYPE_ITEMS,
 } from "./checklists";
+import type { PdfDoc, PdfGroup } from "./layout";
 import {
-  PdfBody,
   PdfChecklist,
-  PdfFooter,
   PdfHeroBig,
-  PdfHeroSmall,
   PdfSection,
   PdfThankYou,
   PdfUnitCard,
@@ -22,9 +19,11 @@ import {
 import type { PdfSignature, ReportData } from "./types";
 
 /** Figma: PDF · Service Report · Page 1–4 (233:100, 233:582, 233:223, 233:487).
- *  Returns the inner content of each sheet; the caller wraps them in `PdfSheet`.
- *  Page 4 (photos) is omitted when the job has no photos; the READINGS block on page 2
- *  renders only when at least one reading was entered (client decision: readings optional). */
+ *  Returns the document as groups of blocks, one group per designed page; `PdfDocument`
+ *  lays them out and adds continuation sheets when a group does not fit (several units,
+ *  long notes, many photos). The photos group is omitted when the job has no photos; the
+ *  READINGS block renders only when at least one reading was entered (client decision:
+ *  readings optional). */
 
 const statusBg: Record<StatusColor, string> = {
   green: "bg-status-green border-status-green-line",
@@ -71,12 +70,9 @@ const signature = (label: string, sig: PdfSignature | null) => (
   </div>
 );
 
-export function serviceReportPages(r: ReportData): ReactNode[] {
+export function serviceReportDoc(r: ReportData): PdfDoc {
   const hasReadings =
     !!r.readings && Object.values(r.readings).some((v) => v.trim() !== "");
-  const hasPhotos = r.photos.length > 0;
-  const total = hasPhotos ? 4 : 3;
-  const pill = `Service Report · ${r.workOrder} · ${r.customer} · ${r.date}`;
   const conditionChecked = CONDITION_ITEMS.flatMap(({ key, good, issue }) =>
     r.conditions[key] === "good"
       ? [good]
@@ -85,126 +81,141 @@ export function serviceReportPages(r: ReportData): ReactNode[] {
         : [],
   );
 
-  const page1 = (
-    <>
-      <PdfHeroBig
-        title={`SERVICE REPORT #${r.workOrder}`}
-        rows={[
-          ["CUSTOMER", r.customer],
-          ["ADDRESS", r.addressLines],
-          ["DATE", r.date],
-          ["PHONE", r.phone ?? "—"],
-          ["WORK ORDER", r.workOrder],
-        ]}
-      />
-      <PdfBody className="pb-3xl pt-md">
-        {r.status && statusBand(r.status)}
-        <PdfSection title="SERVICE TYPE">
-          <PdfChecklist items={SERVICE_TYPE_ITEMS} checked={r.serviceType} />
-        </PdfSection>
-        <div className="flex h-[150px] w-full items-start gap-md">
-          <PdfSection title="CUSTOMER COMPLAINT" className="h-full flex-1">
-            <p className="text-pdf-body text-ink">
-              {r.complaintDetails || "—"}
-            </p>
+  const page1: PdfGroup = {
+    bodyClassName: "pb-3xl pt-md",
+    blocks: [
+      ...(r.status ? [{ key: "status", node: statusBand(r.status) }] : []),
+      {
+        key: "service-type",
+        node: (
+          <PdfSection title="SERVICE TYPE">
+            <PdfChecklist items={SERVICE_TYPE_ITEMS} checked={r.serviceType} />
           </PdfSection>
-          <PdfSection title="CUSTOMER NOTES" className="h-full flex-1">
-            <p className="text-pdf-body text-ink">{r.customerNotes || "—"}</p>
-          </PdfSection>
-        </div>
-      </PdfBody>
-      <PdfFooter page={1} total={total} />
-    </>
-  );
+        ),
+      },
+      {
+        key: "complaint",
+        // At least the designed 150px; longer text grows the row instead of being cut.
+        node: (
+          <div className="flex min-h-[150px] w-full items-stretch gap-md">
+            <PdfSection title="CUSTOMER COMPLAINT" className="flex-1">
+              <p className="text-pdf-body text-ink">
+                {r.complaintDetails || "—"}
+              </p>
+            </PdfSection>
+            <PdfSection title="CUSTOMER NOTES" className="flex-1">
+              <p className="text-pdf-body text-ink">{r.customerNotes || "—"}</p>
+            </PdfSection>
+          </div>
+        ),
+      },
+    ],
+  };
 
-  const page2 = (
-    <>
-      <PdfHeroSmall pill={pill} />
-      <PdfBody className="py-md">
-        <div className="flex w-full items-stretch gap-md">
-          <PdfSection title="TECHNICIAN NOTES" className="flex-1">
-            <p className="text-pdf-body text-ink">{r.serviceNotes || "—"}</p>
-            {r.parts && (
-              <p className="text-pdf-body text-icon">Parts: {r.parts}</p>
-            )}
+  const page2: PdfGroup = {
+    bodyClassName: "py-md",
+    blocks: [
+      {
+        key: "notes",
+        node: (
+          <div className="flex w-full items-stretch gap-md">
+            <PdfSection title="TECHNICIAN NOTES" className="flex-1">
+              <p className="text-pdf-body text-ink">{r.serviceNotes || "—"}</p>
+              {r.parts && (
+                <p className="text-pdf-body text-icon">Parts: {r.parts}</p>
+              )}
+            </PdfSection>
+            <PdfSection title="RECOMMENDATIONS" className="flex-1">
+              <PdfChecklist
+                items={RECOMMENDATION_ITEMS}
+                checked={r.recommendations}
+              />
+              {r.recommendedWork && (
+                <p className="text-pdf-body text-ink">{r.recommendedWork}</p>
+              )}
+            </PdfSection>
+          </div>
+        ),
+      },
+      {
+        key: "equipment",
+        items: r.equipment.map((u, i) => (
+          <PdfUnitCard
+            key={i}
+            title={["UNIT " + (i + 1), u.unitId, u.location]
+              .filter(Boolean)
+              .join(" · ")}
+            rows={[
+              [
+                "Type / Mfr",
+                [u.type, u.manufacturer].filter(Boolean).join(" · "),
+              ],
+              [
+                "Model / Serial",
+                [u.model, u.serial].filter(Boolean).join(" · "),
+              ],
+              [
+                "Tonnage / Refrig.",
+                [u.tonnage, u.refrigerant].filter(Boolean).join(" · "),
+              ],
+              [
+                "Voltage / Filter",
+                [u.voltage, u.filterSize].filter(Boolean).join(" · "),
+              ],
+            ]}
+          />
+        )),
+        wrap: (items, continued) => (
+          <PdfSection title={continued ? "EQUIPMENT (CONTINUED)" : "EQUIPMENT"}>
+            {items}
           </PdfSection>
-          <PdfSection title="RECOMMENDATIONS" className="flex-1">
-            <PdfChecklist
-              items={RECOMMENDATION_ITEMS}
-              checked={r.recommendations}
-            />
-            {r.recommendedWork && (
-              <p className="text-pdf-body text-ink">{r.recommendedWork}</p>
-            )}
-          </PdfSection>
-        </div>
-        <PdfSection title="EQUIPMENT">
-          {r.equipment.map((u, i) => (
-            <PdfUnitCard
-              key={i}
-              title={["UNIT " + (i + 1), u.unitId, u.location]
-                .filter(Boolean)
-                .join(" · ")}
-              rows={[
-                [
-                  "Type / Mfr",
-                  [u.type, u.manufacturer].filter(Boolean).join(" · "),
-                ],
-                [
-                  "Model / Serial",
-                  [u.model, u.serial].filter(Boolean).join(" · "),
-                ],
-                [
-                  "Tonnage / Refrig.",
-                  [u.tonnage, u.refrigerant].filter(Boolean).join(" · "),
-                ],
-                [
-                  "Voltage / Filter",
-                  [u.voltage, u.filterSize].filter(Boolean).join(" · "),
-                ],
-              ]}
-            />
-          ))}
-        </PdfSection>
-        {hasReadings && r.readings && (
-          <PdfSection title="READINGS">
-            <div className="flex w-full items-start gap-sm">
-              {READINGS_GROUPS.map((group) => (
-                <div
-                  key={group.title}
-                  className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xs border border-line"
-                >
-                  <div className="bg-brand px-sm py-2xs">
-                    <p className="text-pdf-table whitespace-nowrap text-inverse">
-                      {group.title}
-                    </p>
+        ),
+      },
+      ...(hasReadings && r.readings
+        ? [
+            {
+              key: "readings",
+              node: (
+                <PdfSection title="READINGS">
+                  <div className="flex w-full items-start gap-sm">
+                    {READINGS_GROUPS.map((group) => (
+                      <div
+                        key={group.title}
+                        className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xs border border-line"
+                      >
+                        <div className="bg-brand px-sm py-2xs">
+                          <p className="text-pdf-table whitespace-nowrap text-inverse">
+                            {group.title}
+                          </p>
+                        </div>
+                        {group.rows.map((row) => (
+                          <div
+                            key={row.key}
+                            className="flex items-start gap-xs border-t border-line px-sm py-[3px] text-pdf-body text-ink"
+                          >
+                            <p className="min-w-0 flex-1">{row.label}</p>
+                            <p className="shrink-0 text-right">
+                              {r.readings?.[row.key] || "—"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
                   </div>
-                  {group.rows.map((row) => (
-                    <div
-                      key={row.key}
-                      className="flex items-start gap-xs border-t border-line px-sm py-[3px] text-pdf-body text-ink"
-                    >
-                      <p className="min-w-0 flex-1">{row.label}</p>
-                      <p className="shrink-0 text-right">
-                        {r.readings?.[row.key] || "—"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </PdfSection>
-        )}
-      </PdfBody>
-      <PdfFooter page={2} total={total} />
-    </>
-  );
+                </PdfSection>
+              ),
+            },
+          ]
+        : []),
+    ],
+  };
 
-  const page3 = (
-    <>
-      <PdfHeroSmall pill={pill} />
-      <PdfBody className="py-lg">
-        <div className="flex min-h-0 w-full flex-1 flex-col justify-between">
+  const page3: PdfGroup = {
+    bodyClassName: "py-lg",
+    blocks: [
+      {
+        key: "checks",
+        node: (
           <div className="flex w-full items-stretch gap-md">
             <PdfSection title="CONDITION CHECKS" className="flex-1">
               <PdfChecklist
@@ -231,6 +242,12 @@ export function serviceReportPages(r: ReportData): ReactNode[] {
               />
             </PdfSection>
           </div>
+        ),
+      },
+      {
+        key: "signatures",
+        pinBottom: true,
+        node: (
           <PdfSection title="SIGNATURES" bodyClassName="gap-lg">
             <div className="flex w-full items-start gap-md">
               {signature("CUSTOMER SIGNATURE", r.customerSignature)}
@@ -238,38 +255,58 @@ export function serviceReportPages(r: ReportData): ReactNode[] {
             </div>
             <PdfThankYou />
           </PdfSection>
-        </div>
-      </PdfBody>
-      <PdfFooter page={3} total={total} />
-    </>
-  );
+        ),
+      },
+    ],
+  };
 
-  const page4 = hasPhotos ? (
-    <>
-      <PdfHeroSmall pill={pill} />
-      <PdfBody className="py-lg">
-        <PdfSection title={`PHOTOS · ${r.photos.length}`}>
-          <div className="grid w-full grid-cols-2 gap-sm">
-            {r.photos.map((photo, i) => (
-              <div key={i} className="flex min-w-0 flex-col gap-[3px]">
-                <div className="h-[160px] w-full overflow-hidden rounded-2xs border border-line">
-                  <img
-                    src={photo.src}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
+  const photos: PdfGroup | null =
+    r.photos.length > 0
+      ? {
+          bodyClassName: "py-lg",
+          blocks: [
+            {
+              key: "photos",
+              items: r.photos.map((photo, i) => (
+                <div key={i} className="flex min-w-0 flex-col gap-[3px]">
+                  <div className="h-[160px] w-full overflow-hidden rounded-2xs border border-line">
+                    <img
+                      src={photo.src}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <p className="text-pdf-small text-icon">
+                    {i + 1}. {photo.caption ?? "Photo"}
+                  </p>
                 </div>
-                <p className="text-pdf-small text-icon">
-                  {i + 1}. {photo.caption ?? "Photo"}
-                </p>
-              </div>
-            ))}
-          </div>
-        </PdfSection>
-      </PdfBody>
-      <PdfFooter page={4} total={total} />
-    </>
-  ) : null;
+              )),
+              wrap: (items, continued) => (
+                <PdfSection
+                  title={`PHOTOS · ${r.photos.length}${continued ? " (CONTINUED)" : ""}`}
+                >
+                  <div className="grid w-full grid-cols-2 gap-sm">{items}</div>
+                </PdfSection>
+              ),
+            },
+          ],
+        }
+      : null;
 
-  return [page1, page2, page3, ...(page4 ? [page4] : [])];
+  return {
+    hero: (
+      <PdfHeroBig
+        title={`SERVICE REPORT #${r.workOrder}`}
+        rows={[
+          ["CUSTOMER", r.customer],
+          ["ADDRESS", r.addressLines],
+          ["DATE", r.date],
+          ["PHONE", r.phone ?? "—"],
+          ["WORK ORDER", r.workOrder],
+        ]}
+      />
+    ),
+    pill: `Service Report · ${r.workOrder} · ${r.customer} · ${r.date}`,
+    groups: [page1, page2, page3, ...(photos ? [photos] : [])],
+  };
 }

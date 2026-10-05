@@ -1,14 +1,16 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { CompanyContext } from '../pdf/CompanyContext'
 import { decodePdfPayload } from '../pdf/data'
-import { invoicePages } from '../pdf/InvoicePdf'
+import { invoiceDoc } from '../pdf/InvoicePdf'
+import { PdfDocument } from '../pdf/PdfDocument'
 import { PdfSheet } from '../pdf/primitives'
-import { serviceReportPages } from '../pdf/ServiceReport'
+import { serviceReportDoc } from '../pdf/ServiceReport'
 
 declare global {
   interface Window {
-    /** Set once fonts and images are in — the PDF renderer waits for it before printing. */
+    /** Set once the document is paginated and fonts and images are in — the PDF renderer
+     *  waits for it before printing. */
     __pdfReady?: boolean
   }
 }
@@ -19,35 +21,35 @@ declare global {
 export function PrintPage() {
   const { kind } = useParams()
   const payload = useMemo(() => decodePdfPayload(window.location.hash), [])
+  const doc = useMemo(() => {
+    if (!payload || payload.kind !== kind) return null
+    if (payload.kind === 'report') return payload.report ? serviceReportDoc(payload.report) : null
+    return payload.invoice ? invoiceDoc(payload.invoice) : null
+  }, [payload, kind])
 
-  useEffect(() => {
-    if (!payload) return
-    const settle = async () => {
-      await document.fonts.ready
-      await Promise.all(
-        [...document.images].map(
-          (img) =>
-            img.complete ||
-            new Promise<void>((resolve) => {
-              img.addEventListener('load', () => resolve(), { once: true })
-              img.addEventListener('error', () => resolve(), { once: true })
-            }),
-        ),
-      )
+  // Pagination may have added sheets (and their images) after the first paint, so the
+  // images are awaited only once the layout has settled.
+  const onSettled = useCallback(() => {
+    void Promise.all(
+      [...document.images].map(
+        (img) =>
+          img.complete ||
+          new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true })
+            img.addEventListener('error', () => resolve(), { once: true })
+          }),
+      ),
+    ).then(() => {
       window.__pdfReady = true
-    }
-    void settle()
-  }, [payload])
+    })
+  }, [])
 
-  if (!payload || payload.kind !== kind) return <p className="p-lg text-body text-ink">No document data.</p>
-  const pages = payload.kind === 'report' && payload.report ? serviceReportPages(payload.report) : payload.invoice ? invoicePages(payload.invoice) : []
+  if (!payload || !doc) return <p className="p-lg text-body text-ink">No document data.</p>
 
   return (
     <CompanyContext.Provider value={payload.company}>
       <div className="print-page flex flex-col bg-surface">
-        {pages.map((page, i) => (
-          <PdfSheet key={i}>{page}</PdfSheet>
-        ))}
+        <PdfDocument doc={doc} onSettled={onSettled} sheet={(content, i) => <PdfSheet key={i}>{content}</PdfSheet>} />
       </div>
     </CompanyContext.Provider>
   )

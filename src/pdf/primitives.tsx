@@ -1,5 +1,5 @@
 import { Check, Mail, MapPin, Phone } from 'lucide-react'
-import { useContext, type CSSProperties, type ReactNode } from 'react'
+import { useContext, type CSSProperties, type ReactNode, type Ref } from 'react'
 import { CompanyContext } from './CompanyContext.js'
 import { splitFooterNote } from './company.js'
 
@@ -93,9 +93,14 @@ export function PdfFooter({ page, total }: { page: number; total: number }) {
   )
 }
 
-/** Body column between hero and footer. Page 1 uses pt-md pb-3xl, later pages py-lg. */
-export function PdfBody({ children, className = 'py-lg' }: { children: ReactNode; className?: string }) {
-  return <div className={`relative flex min-h-0 w-full flex-1 flex-col gap-md px-3xl ${className}`}>{children}</div>
+/** Body column between hero and footer. Page 1 uses pt-md pb-3xl, later pages py-lg.
+ *  `bodyRef` lets `PdfDocument` measure the column when it paginates. */
+export function PdfBody({ children, className = 'py-lg', bodyRef }: { children: ReactNode; className?: string; bodyRef?: Ref<HTMLDivElement> }) {
+  return (
+    <div ref={bodyRef} className={`relative flex min-h-0 w-full flex-1 flex-col gap-md px-3xl ${className}`}>
+      {children}
+    </div>
+  )
 }
 
 /** Bordered section with a navy title band (Figma "section · …"). */
