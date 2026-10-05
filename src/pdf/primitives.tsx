@@ -62,15 +62,17 @@ export function PdfHeroBig({ title, rows }: { title: string; rows: [string, stri
   )
 }
 
-/** Compact hero for pages 2+: lockup left, document pill right. */
+/** Compact hero for pages 2+: lockup left, document pill right. A long customer name wraps
+ *  the pill onto a second line (balanced, centred on the lockup) instead of pushing it into
+ *  the lockup; the 20px radius is a full pill at one line and stays rounded at two. */
 export function PdfHeroSmall({ pill }: { pill: string }) {
   const COMPANY = useContext(CompanyContext)
   return (
-    <div className="relative flex h-[83px] w-full shrink-0 items-start justify-between px-3xl pb-lg pt-3xl shadow-[0_4px_24px_0_var(--alpha-navy-30)]">
+    <div className="relative flex h-[83px] w-full shrink-0 items-center justify-between gap-lg px-3xl pb-lg pt-3xl shadow-[0_4px_24px_0_var(--alpha-navy-30)]">
       <img {...bg('hero')} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      <img src="/brand/header-lockup.svg" alt={COMPANY.name} width={137} height={35} className="relative h-[35px] w-auto" />
-      <div className="relative rounded-full bg-brand-strong px-lg py-[10px]">
-        <p className="text-pdf-body whitespace-nowrap text-inverse">{pill}</p>
+      <img src="/brand/header-lockup.svg" alt={COMPANY.name} width={137} height={35} className="relative h-[35px] w-auto shrink-0" />
+      <div className="relative min-w-0 rounded-[20px] bg-brand-strong px-lg py-[10px]">
+        <p className="text-pdf-body text-center text-balance text-inverse">{pill}</p>
       </div>
     </div>
   )
@@ -147,10 +149,13 @@ export function PdfChecklist({ items, checked, columns = 2 }: { items: string[];
 
 /** Key/value table with a light title row (equipment units). `columns={2}` sets the fields
  *  side by side in pairs, halving the card's height (the report's equipment block, so two
- *  units and the readings share a page). */
-export function PdfUnitCard({ title, rows, labelWidth = 110, columns = 1 }: { title: string; rows: [string, string][]; labelWidth?: number; columns?: 1 | 2 }) {
+ *  or three units and the readings share a page). The right column is the wider one: it
+ *  holds model and serial number, the longest value, which must stay on one line.
+ *  `labelWidth` may be a pair, one width per column. */
+export function PdfUnitCard({ title, rows, labelWidth = 110, columns = 1 }: { title: string; rows: [string, string][]; labelWidth?: number | [number, number]; columns?: 1 | 2 }) {
   const lines: [string, string][][] = []
   for (let i = 0; i < rows.length; i += columns) lines.push(rows.slice(i, i + columns))
+  const widthOf = (column: number) => (Array.isArray(labelWidth) ? labelWidth[column] : labelWidth)
   return (
     <div className="flex w-full flex-col overflow-hidden rounded-2xs border border-line">
       <div className="bg-surface-alt px-sm py-2xs">
@@ -159,8 +164,11 @@ export function PdfUnitCard({ title, rows, labelWidth = 110, columns = 1 }: { ti
       {lines.map((line) => (
         <div key={line[0][0]} className="flex items-stretch border-t border-line">
           {line.map(([label, value], i) => (
-            <div key={label} className={`flex min-w-0 flex-1 items-start gap-sm px-sm py-[3px] ${i > 0 ? 'border-l border-line' : ''}`}>
-              <p className="shrink-0 text-pdf-body text-icon" style={{ width: labelWidth }}>
+            <div
+              key={label}
+              className={`flex min-w-0 items-start gap-sm px-sm py-[3px] ${columns === 2 && i === 0 ? 'w-[47.5%] shrink-0' : 'flex-1'} ${i > 0 ? 'border-l border-line' : ''}`}
+            >
+              <p className="shrink-0 text-pdf-body text-icon" style={{ width: widthOf(i) }}>
                 {label}
               </p>
               <p className="min-w-0 flex-1 text-pdf-body text-ink">{value || '—'}</p>

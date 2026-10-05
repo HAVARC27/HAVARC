@@ -159,7 +159,7 @@ export function serviceReportDoc(r: ReportData): PdfDoc {
               .filter(Boolean)
               .join(" · ")}
             columns={compactUnits ? 2 : 1}
-            labelWidth={compactUnits ? 98 : 110}
+            labelWidth={compactUnits ? [90, 76] : 110}
             rows={unitRows(u)}
           />
         )),
