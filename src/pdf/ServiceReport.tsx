@@ -81,6 +81,19 @@ export function serviceReportDoc(r: ReportData): PdfDoc {
         : [],
   );
 
+  const unitRows = (u: ReportData["equipment"][number]): [string, string][] => [
+    ["Type / Mfr", [u.type, u.manufacturer].filter(Boolean).join(" · ")],
+    ["Model / Serial", [u.model, u.serial].filter(Boolean).join(" · ")],
+    ["Tonnage / Refrig.", [u.tonnage, u.refrigerant].filter(Boolean).join(" · ")],
+    ["Voltage / Filter", [u.voltage, u.filterSize].filter(Boolean).join(" · ")],
+  ];
+  // Unit fields sit in two columns so two or three units share page 2 with the readings.
+  // A value of this length would wrap to three lines in a half-width column and make the
+  // card taller than the one-column form, so such a report keeps full-width rows.
+  const compactUnits = r.equipment.every((u) =>
+    unitRows(u).every(([, value]) => value.length <= 44),
+  );
+
   const page1: PdfGroup = {
     bodyClassName: "pb-3xl pt-md",
     blocks: [
@@ -145,24 +158,9 @@ export function serviceReportDoc(r: ReportData): PdfDoc {
             title={["UNIT " + (i + 1), u.unitId, u.location]
               .filter(Boolean)
               .join(" · ")}
-            rows={[
-              [
-                "Type / Mfr",
-                [u.type, u.manufacturer].filter(Boolean).join(" · "),
-              ],
-              [
-                "Model / Serial",
-                [u.model, u.serial].filter(Boolean).join(" · "),
-              ],
-              [
-                "Tonnage / Refrig.",
-                [u.tonnage, u.refrigerant].filter(Boolean).join(" · "),
-              ],
-              [
-                "Voltage / Filter",
-                [u.voltage, u.filterSize].filter(Boolean).join(" · "),
-              ],
-            ]}
+            columns={compactUnits ? 2 : 1}
+            labelWidth={compactUnits ? 98 : 110}
+            rows={unitRows(u)}
           />
         )),
         wrap: (items, continued) => (

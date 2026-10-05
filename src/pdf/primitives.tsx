@@ -145,19 +145,27 @@ export function PdfChecklist({ items, checked, columns = 2 }: { items: string[];
   )
 }
 
-/** Key/value table with a light title row (equipment units). */
-export function PdfUnitCard({ title, rows, labelWidth = 110 }: { title: string; rows: [string, string][]; labelWidth?: number }) {
+/** Key/value table with a light title row (equipment units). `columns={2}` sets the fields
+ *  side by side in pairs, halving the card's height (the report's equipment block, so two
+ *  units and the readings share a page). */
+export function PdfUnitCard({ title, rows, labelWidth = 110, columns = 1 }: { title: string; rows: [string, string][]; labelWidth?: number; columns?: 1 | 2 }) {
+  const lines: [string, string][][] = []
+  for (let i = 0; i < rows.length; i += columns) lines.push(rows.slice(i, i + columns))
   return (
     <div className="flex w-full flex-col overflow-hidden rounded-2xs border border-line">
       <div className="bg-surface-alt px-sm py-2xs">
         <p className="text-pdf-section whitespace-nowrap text-brand">{title}</p>
       </div>
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex items-start gap-sm border-t border-line px-sm py-[3px]">
-          <p className="shrink-0 text-pdf-body text-icon" style={{ width: labelWidth }}>
-            {label}
-          </p>
-          <p className="min-w-0 flex-1 text-pdf-body text-ink">{value || '—'}</p>
+      {lines.map((line) => (
+        <div key={line[0][0]} className="flex items-stretch border-t border-line">
+          {line.map(([label, value], i) => (
+            <div key={label} className={`flex min-w-0 flex-1 items-start gap-sm px-sm py-[3px] ${i > 0 ? 'border-l border-line' : ''}`}>
+              <p className="shrink-0 text-pdf-body text-icon" style={{ width: labelWidth }}>
+                {label}
+              </p>
+              <p className="min-w-0 flex-1 text-pdf-body text-ink">{value || '—'}</p>
+            </div>
+          ))}
         </div>
       ))}
     </div>
