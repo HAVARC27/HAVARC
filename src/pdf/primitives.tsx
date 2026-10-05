@@ -1,5 +1,5 @@
 import { Check, Mail, MapPin, Phone } from 'lucide-react'
-import { useContext, type CSSProperties, type ReactNode, type Ref } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react'
 import { CompanyContext } from './CompanyContext.js'
 import { splitFooterNote } from './company.js'
 
@@ -62,17 +62,55 @@ export function PdfHeroBig({ title, rows }: { title: string; rows: [string, stri
   )
 }
 
-/** Compact hero for pages 2+: lockup left, document pill right. A long customer name wraps
- *  the pill onto a second line (balanced, centred on the lockup) instead of pushing it into
- *  the lockup; the 20px radius is a full pill at one line and stays rounded at two. */
+/** Width of the widest line of a paragraph once its text has wrapped, or null while it sits
+ *  on one line. A block whose text wraps is as wide as the room it was given, not as its
+ *  longest line, and CSS has no way to shrink it back — so the lines are measured after
+ *  layout (and again once the fonts are in) and the caller sets that width explicitly. */
+function useWrappedTextWidth(text: string) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [fontsReady, setFontsReady] = useState(false)
+  const [measured, setMeasured] = useState<{ key: string; width: number | null } | null>(null)
+  const key = `${fontsReady}|${text}`
+
+  useEffect(() => {
+    let alive = true
+    void document.fonts.ready.then(() => alive && setFontsReady(true))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || measured?.key === key) return
+    // The in-app preview scales the sheets with a transform; client rects are in scaled px.
+    const scale = el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const lines = [...range.getClientRects()].filter((r) => r.width > 0)
+    const widest = Math.max(0, ...lines.map((r) => r.width)) / (scale || 1)
+    setMeasured({ key, width: lines.length > 1 ? Math.ceil(widest) + 1 : null })
+  }, [key, measured])
+
+  // Until this text has been measured the paragraph renders unconstrained.
+  return { ref, width: measured?.key === key ? measured.width : null }
+}
+
+/** Compact hero for pages 2+: lockup left, document pill right, pinned to the right edge.
+ *  A long customer name wraps the pill onto a second line instead of pushing it into the
+ *  lockup; the pill is then only as wide as its longest line, with the text right-aligned.
+ *  The 20px radius is a full pill at one line and stays rounded at two. */
 export function PdfHeroSmall({ pill }: { pill: string }) {
   const COMPANY = useContext(CompanyContext)
+  const { ref, width } = useWrappedTextWidth(pill)
   return (
     <div className="relative flex h-[83px] w-full shrink-0 items-center justify-between gap-lg px-3xl pb-lg pt-3xl shadow-[0_4px_24px_0_var(--alpha-navy-30)]">
       <img {...bg('hero')} alt="" className="absolute inset-0 h-full w-full object-cover" />
       <img src="/brand/header-lockup.svg" alt={COMPANY.name} width={137} height={35} className="relative h-[35px] w-auto shrink-0" />
       <div className="relative min-w-0 rounded-[20px] bg-brand-strong px-lg py-[10px]">
-        <p className="text-pdf-body text-center text-balance text-inverse">{pill}</p>
+        <p ref={ref} className="text-pdf-body text-right text-balance text-inverse" style={width ? { width } : undefined}>
+          {pill}
+        </p>
       </div>
     </div>
   )
